@@ -1,7 +1,7 @@
 # app.py
 import pandas as pd
 import streamlit as st
-import plotly.express as px
+import plotly.express as px 
 from supabase import create_client
 
 st.set_page_config(page_title="DHT11 Dashboard", layout="centered", initial_sidebar_state="collapsed")
