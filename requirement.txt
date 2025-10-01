@@ -1,6 +1,4 @@
+pandas
 streamlit
 supabase
-pandas
-plotly
-python-dateutil
-st-supabase-connection
+python-dotenv
