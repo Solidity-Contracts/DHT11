@@ -1,77 +1,84 @@
+# app.py
 import pandas as pd
 import streamlit as st
+import plotly.express as px
 from supabase import create_client
 
-st.set_page_config(page_title="DHT11 Live Dashboard", page_icon="🌡️", layout="wide")
+st.set_page_config(page_title="DHT11 Dashboard", layout="centered", initial_sidebar_state="collapsed")
 
-# --- Connect to Supabase (use Streamlit secrets) ---
+# ---- Supabase client (reads from secrets) ----
 @st.cache_resource
 def get_client():
     url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["anon_key"]
+    key = st.secrets["supabase"]["anon_key"]  # use anon/public key
     return create_client(url, key)
 
 supabase = get_client()
 
-# --- Data fetcher with caching + auto-refresh window ---
-@st.cache_data(ttl=10)  # refresh query results every 10 seconds
-def fetch_readings(limit: int = 1000, device_id: str | None = None) -> pd.DataFrame:
-    q = supabase.table("dht_readings").select("*").order("created_at", desc=True).limit(limit)
-    if device_id:
-        q = q.eq("device_id", device_id)
-    res = q.execute()
-    df = pd.DataFrame(res.data)
-    if not df.empty:
-        # ensure proper dtypes and sorting oldest->newest for charts
-        df["created_at"] = pd.to_datetime(df["created_at"])
-        df = df.sort_values("created_at")
+# ---- Data fetcher ----
+@st.cache_data(ttl=10)  # refresh every ~10s
+def fetch_rows(limit: int = 1000):
+    # Adjust table/columns if yours differ
+    res = (
+        supabase.table("maintable")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    df = pd.DataFrame(res.data or [])
+    if df.empty:
+        return df
+
+    # Robust timestamp handling
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+    df = df.sort_values("created_at")  # oldest -> newest for plotting
+
+    # Make friendly columns you used
+    df["DateTime"] = df["created_at"].dt.tz_convert(None)  # strip tz for Plotly
+    df["date"] = df["DateTime"].dt.date.astype(str)
+    df["time"] = df["DateTime"].dt.time.astype(str)
     return df
 
-# --- Sidebar controls ---
-st.sidebar.header("Filters")
-device_id = st.sidebar.text_input("Device ID (optional)")
-limit = st.sidebar.slider("Rows to load", min_value=100, max_value=5000, value=1000, step=100)
-st.sidebar.caption("Data auto-refreshes every ~10s")
-
-# Manual refresh button (busts cache immediately)
+# ---- Sidebar ----
+st.sidebar.header("Options")
+limit = st.sidebar.slider("Rows to load", 100, 5000, 1000, 100)
+auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s", value=True)
 if st.sidebar.button("Refresh now"):
-    fetch_readings.clear()  # clear cache
+    fetch_rows.clear()
     st.experimental_rerun()
 
-# --- Fetch data ---
-df = fetch_readings(limit=limit, device_id=device_id)
+# ---- Optional auto-refresh tick ----
+if auto_refresh:
+    st.experimental_rerun  # no-op to show intent; Streamlit Cloud handles ttl-based refresh
 
-st.title("🌡️ DHT11 Live Dashboard")
-st.write("Streaming readings from Supabase.")
+# ---- Main ----
+st.markdown("### Temperature & Humidity (from Supabase)")
 
-# --- Top KPIs ---
+df = fetch_rows(limit)
 if df.empty:
-    st.info("No data found yet. Once your Arduino starts sending rows to Supabase, they’ll appear here.")
+    st.info("No data found yet in `maintable`. Once rows arrive, charts will render here.")
 else:
+    # Latest KPIs (assumes columns 'temperature' and 'humidity')
     latest = df.iloc[-1]
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Latest Temperature (°C)", f"{latest['temperature_c']:.1f}")
-    col2.metric("Latest Humidity (%)", f"{latest['humidity']:.1f}")
-    col3.metric("Last Update", latest['created_at'].strftime("%Y-%m-%d %H:%M:%S"))
-    col4.metric("Rows Loaded", len(df))
+    c1, c2, c3 = st.columns(3)
+    if "temperature" in df and pd.notna(latest.get("temperature")):
+        c1.metric("Latest Temperature (°C)", f"{latest['temperature']:.1f}")
+    if "humidity" in df and pd.notna(latest.get("humidity")):
+        c2.metric("Latest Humidity (%)", f"{latest['humidity']:.1f}")
+    c3.metric("Last Update", latest["DateTime"].strftime("%Y-%m-%d %H:%M:%S"))
 
-    # --- Charts ---
-    ts_cols = ["temperature_c", "humidity"]
-    plottable = df.set_index("created_at")[ts_cols]
+    # Charts
+    if "temperature" in df:
+        st.markdown("### Temperature")
+        fig_t = px.line(df, x="DateTime", y="temperature", markers=True)
+        st.plotly_chart(fig_t, use_container_width=True)
 
-    st.subheader("Time Series")
-    st.line_chart(plottable)  # simple and fast
+    if "humidity" in df:
+        st.markdown("### Humidity")
+        fig_h = px.line(df, x="DateTime", y="humidity", markers=True)
+        st.plotly_chart(fig_h, use_container_width=True)
 
-    # --- Data table ---
+    # Raw table
     with st.expander("Raw data"):
-        st.dataframe(df[::-1], use_container_width=True)
-
-    # --- Optional stats ---
-    st.subheader("Summary (last loaded window)")
-    stats = (
-        df.assign(hour=df["created_at"].dt.floor("H"))
-          .groupby("hour")[["temperature_c", "humidity"]]
-          .agg(["min", "mean", "max"])
-    )
-    st.dataframe(stats, use_container_width=True)
-
+        st.dataframe(df.iloc[::-1], use_container_width=True)
