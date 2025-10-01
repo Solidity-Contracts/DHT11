@@ -1,14 +1,14 @@
 import pandas as pd
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 
 st.set_page_config(page_title="DHT11 Live Dashboard", page_icon="🌡️", layout="wide")
 
 # --- Connect to Supabase (use Streamlit secrets) ---
 @st.cache_resource
-def get_client() -> Client:
+def get_client():
     url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["anon_key"]  # use anon key for client-side reads
+    key = st.secrets["supabase"]["anon_key"]
     return create_client(url, key)
 
 supabase = get_client()
