@@ -1,16 +1,29 @@
 import pandas as pd
 import streamlit as st
-from supabase import create_client
+try:
+    from supabase import create_client
+except ImportError:
+    st.error("Supabase package not installed. Run: pip install supabase")
+    st.stop()
 
 st.set_page_config(page_title="DHT11 Dashboard", page_icon="🌡️", layout="centered")
 
 @st.cache_resource
 def get_client():
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["anon_key"]  # anon/public key
-    return create_client(url, key)
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["anon_key"]
+        return create_client(url, key)
+    except KeyError:
+        st.error("Supabase secrets not configured. Check your secrets.toml file")
+        return None
+    except Exception as e:
+        st.error(f"Error connecting to Supabase: {e}")
+        return None
 
 supabase = get_client()
+
+st.set_page_config(page_title="DHT11 Dashboard", page_icon="🌡️", layout="centered")
 
 @st.cache_data(ttl=10)
 def fetch_data(limit=1000):
