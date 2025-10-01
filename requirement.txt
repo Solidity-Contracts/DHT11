@@ -1,4 +1,4 @@
-pandas
-streamlit
-st-supabase-connection
-git+https://github.com/supabase-community/supabase-py.git
+streamlit>=1.37
+supabase>=2.6
+pandas>=2.2
+python-dateutil>=2.9
