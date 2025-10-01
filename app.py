@@ -3,7 +3,7 @@ import streamlit as st
 from supabase import create_client
 
 # -----------------------------
-# Page setup
+# Streamlit setup
 # -----------------------------
 st.set_page_config(
     page_title="DHT11 Dashboard",
@@ -13,23 +13,23 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Supabase client (from secrets)
+# Supabase connection
 # -----------------------------
 @st.cache_resource
 def get_client():
     url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["anon_key"]  # anon/public key only
+    key = st.secrets["supabase"]["anon_key"]  # anon/public key
     return create_client(url, key)
 
 supabase = get_client()
 
 # -----------------------------
-# Data fetcher
+# Fetch data
 # -----------------------------
-@st.cache_data(ttl=10)  # refresh results every ~10s
+@st.cache_data(ttl=10)  # refresh every 10 seconds
 def fetch_data(limit=1000):
     res = (
-        supabase.table("maintable")  # <-- change if your table name differs
+        supabase.table("maintable")      # <-- change "maintable" if your table name differs
         .select("*")
         .order("created_at", desc=True)
         .limit(limit)
@@ -39,59 +39,40 @@ def fetch_data(limit=1000):
     if df.empty:
         return df
 
-    # Parse timestamps robustly
+    # Parse timestamps
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
-    df = df.dropna(subset=["created_at"]).sort_values("created_at")  # oldest -> newest
-
-    # Convenience column for charts/labels
-    df["DateTime"] = df["created_at"].dt.tz_convert(None)  # strip timezone for charts
+    df = df.sort_values("created_at")
+    df["DateTime"] = df["created_at"].dt.tz_convert(None)  # strip timezone
     return df
 
 # -----------------------------
-# Sidebar controls
+# UI
 # -----------------------------
-st.sidebar.header("Options")
-limit = st.sidebar.slider("Rows to load", min_value=100, max_value=5000, value=1000, step=100)
-if st.sidebar.button("Refresh now"):
-    fetch_data.clear()
-    st.experimental_rerun()
+st.title("🌡️ DHT11 Live Dashboard")
 
-# -----------------------------
-# Main UI
-# -----------------------------
-st.title("🌡️ DHT11 Live Dashboard (Supabase → Streamlit)")
-
-df = fetch_data(limit)
+df = fetch_data(limit=1000)
 if df.empty:
-    st.info("No data found in `maintable` yet. Once your Arduino writes rows to Supabase, they’ll show up here.")
+    st.info("No data found yet. Once your Arduino writes rows to Supabase, they’ll show up here.")
 else:
     latest = df.iloc[-1]
+
+    # Metrics
     c1, c2, c3 = st.columns(3)
-    if "temperature" in df.columns and pd.notna(latest.get("temperature")):
+    if "temperature" in df.columns:
         c1.metric("Latest Temperature (°C)", f"{latest['temperature']:.1f}")
-    if "humidity" in df.columns and pd.notna(latest.get("humidity")):
+    if "humidity" in df.columns:
         c2.metric("Latest Humidity (%)", f"{latest['humidity']:.1f}")
     c3.metric("Last Update", latest["DateTime"].strftime("%Y-%m-%d %H:%M:%S"))
 
-    # ---- Charts (built-in) ----
-    st.subheader("Temperature")
+    # Charts
     if "temperature" in df.columns:
-        st.line_chart(
-            df.set_index("DateTime")[["temperature"]],
-            use_container_width=True,
-        )
-    else:
-        st.warning("Column `temperature` not found.")
+        st.subheader("Temperature")
+        st.line_chart(df.set_index("DateTime")[["temperature"]], use_container_width=True)
 
-    st.subheader("Humidity")
     if "humidity" in df.columns:
-        st.line_chart(
-            df.set_index("DateTime")[["humidity"]],
-            use_container_width=True,
-        )
-    else:
-        st.warning("Column `humidity` not found.")
+        st.subheader("Humidity")
+        st.line_chart(df.set_index("DateTime")[["humidity"]], use_container_width=True)
 
     # Raw data
-    with st.expander("Raw data"):
-        st.dataframe(df.iloc[::-1], use_container_width=True)
+    with st.expander("Raw Data"):
+        st.dataframe(df[::-1], use_container_width=True)
