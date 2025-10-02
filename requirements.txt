@@ -1,3 +1,4 @@
-pandas
-streamlit
-supabase
+streamlit>=1.37
+supabase>=2.6
+pandas>=2.2
+python-dateutil>=2.9
