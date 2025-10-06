@@ -5,7 +5,7 @@ st.set_page_config(page_title="Sensor Readings Sanity", layout="centered")
 
 @st.cache_resource
 def client():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+    return create_client(st.secrets[supabase]["SUPABASE_URL"], st.secrets[supabase]["SUPABASE_ANON_KEY"])
 
 @st.cache_data(ttl=10)
 def fetch(limit=200):
